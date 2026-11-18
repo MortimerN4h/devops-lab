@@ -1,0 +1,17 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Private notes (repo is public)
+DAILY_REPORT.md
+
+# Secrets
+.env
+*.pem
+
+# Dependencies / build output
+node_modules/
+__pycache__/
+target/
