@@ -1,0 +1,42 @@
+#!/bin/bash
+# Runs ONCE, as root, at the first boot of the app server (cloud-init).
+# Log: /var/log/cloud-init-output.log   Status: cloud-init status --wait
+# ${registry}, ${domain}, ${repo_url} are filled in by Terraform (templatefile).
+set -euxo pipefail
+export HOME=/root
+
+# 1) 2GB swap (2GB RAM is tight for several containers)
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# 2) Docker (official convenience script) + tools
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker ubuntu
+apt-get update -y
+apt-get install -y git certbot amazon-ecr-credential-helper
+
+# 3) Let Docker log in to ECR by itself, using the instance role.
+#    No "docker login" and no 12-hour password expiry. Only for our registry; Docker Hub stays normal.
+for home in /root /home/ubuntu; do
+  mkdir -p $home/.docker
+  echo '{ "credHelpers": { "${registry}": "ecr-login" } }' > $home/.docker/config.json
+done
+chown -R ubuntu:ubuntu /home/ubuntu/.docker
+
+# 4) Code + settings (.env is read automatically by docker compose)
+git clone ${repo_url} /opt/devops-lab
+mkdir -p /var/www/certbot
+cd /opt/devops-lab/task_week1/deploy
+cat > .env <<ENV
+REGISTRY=${registry}
+DOMAIN=${domain}
+NGINX_MODE=http
+ENV
+chown -R ubuntu:ubuntu /opt/devops-lab
+
+# 5) Start everything
+docker compose pull
+docker compose up -d

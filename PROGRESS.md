@@ -61,11 +61,20 @@ Mục đích học: network, DNS, cert, Dockerfile, compose, DB admin.
 - [ ] Bước 12b: Ansible (cấu hình EC2: cài docker, pull ECR, chạy compose)
 - [ ] Bước 13: Route53 subdomain
 - [ ] Bước 14: HTTPS certbot
+**Thứ tự CHỐT (2026-11-18): làm trọn 1 lát dọc với app Node trước** = Bước 11 → 12 (EC2 app + Nginx) → 13 (Route53 `node.<domain>`) → 14 (HTTPS) → 15 (deploy tự động); sau đó mỗi app mới chỉ thêm image ECR + 1 server block Nginx + 1 bản ghi DNS + cert. Rồi mới tới Bước 3-8.
 (Thứ tự có thể điều chỉnh cùng user. Chi phí: destroy tài nguyên AWS sau mỗi buổi thử; stop bastion khi không dùng.)
 
 ## 7. Bước hiện tại
-Bước 11 (code đã viết, user đang apply): `task_week1/terraform/ci/` = 2 ECR repo (`devops-lab/node-frontend`, `devops-lab/node-backend`, lifecycle giữ 10 image, scan on push) + OIDC provider GitHub + role `devops-lab-github-actions` (trust: chỉ `repo:MortimerN4h/devops-lab:ref:refs/heads/main`; quyền: chỉ push/pull 2 repo). Workflow `.github/workflows/node.yml`: job `test` (compose + api-test) → job `push` (matrix frontend/backend, OIDC, tag `<sha>` + `latest`, cache gha). User cần: `terraform apply`, đặt GitHub repo **variable** `AWS_ROLE_ARN` = output `github_actions_role_arn`, push, xem tab Actions, kiểm tra `aws ecr list-images`. Thêm app mới: thêm tên vào `repositories` trong `variables.tf` + 1 workflow mới.
-Sau đó Bước 3 (Python + Angular). `terraform.tfstate` của `ci/` nằm trên bastion (gitignore) – mất là phải import lại.
+- **CI tạm bỏ qua**: tài khoản GitHub bị khóa billing (chờ 1-3 ngày: thêm thẻ / GitHub Student). Trong lúc chờ, build + push image Node lên ECR BẰNG TAY từ bastion (vòng `for c in frontend backend` → `docker build -t <registry>/devops-lab/node-$c:<sha> -t ...:latest` + `docker push --all-tags`). Khi mở khóa: `gh run rerun --failed`.
+- Bước 11 xong phần AWS: `terraform/ci/` (ECR `devops-lab/node-*`, OIDC, role `devops-lab-github-actions`), variable `AWS_ROLE_ARN` đã đặt cho repo `devops-lab`.
+- **Bước 12-14 (code đã viết, chờ user chạy)**, domain user mua ở nhà đăng ký ngoài:
+  1. `terraform/dns/` = hosted zone (giữ lâu dài, tách riêng để NS không đổi) → copy 4 `name_servers` sang nhà đăng ký → kiểm tra `dig NS <domain> +short`.
+  2. Bastion: `ssh-keygen -t ed25519 -f ~/.ssh/devops-app -N ""`. Push `task_week1/deploy/` lên GitHub TRƯỚC (user_data clone repo public).
+  3. `terraform/app/` = EC2 `devops-app` (t3.small, SG 80/443 mở, 22 chỉ từ SG bastion, role chỉ ECR read-only, Elastic IP, bản ghi A `node.<domain>`). user_data: swap, Docker, certbot, `amazon-ecr-credential-helper` (pull ECR không cần docker login), clone repo → `/opt/devops-lab/task_week1/deploy`, ghi `.env` (REGISTRY, DOMAIN, NGINX_MODE=http), `docker compose up -d`.
+  4. `task_week1/deploy/`: compose production = `edge` nginx (cổng 80/443 duy nhất, template `nginx/http|https/default.conf.template` chọn bằng `NGINX_MODE`) + node-frontend/backend (alias `backend`)/mongo trên network `node`, `restart: unless-stopped`.
+  5. HTTPS: trên app server `sudo certbot certonly --webroot -w /var/www/certbot -d node.<domain> ... --deploy-hook "docker exec edge nginx -s reload"` → `NGINX_MODE=https` trong `.env` → `docker compose up -d edge` → `sudo certbot renew --dry-run`.
+- Sau đó: Bước 15 (deploy tự động khi CI mở khóa) và Bước 3 (Python). App mới = thêm service + network + server block + bản ghi A + `certbot -d <app>.<domain>`.
+- Chi phí app server: t3.small ~$0.02/h + Elastic IP ~$0.005/h + zone $0.5/tháng. Destroy `terraform/app` khi không dùng (mất data Mongo + cert; Let's Encrypt giới hạn 5 cert trùng tên/tuần). KHÔNG destroy `terraform/dns`.
 
 ## 8. Nhật ký / Kiến thức đã học
 - 2026-11-17: swap (fallocate/chmod 600/mkswap/swapon, fstab). Build ở nơi khác rồi push ECR, EC2 chỉ pull+chạy. Terraform = tạo hạ tầng, Ansible = cấu hình trong máy.

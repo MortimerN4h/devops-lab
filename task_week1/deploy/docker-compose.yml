@@ -1,0 +1,71 @@
+# Production stack on the app EC2 (cloned to /opt/devops-lab/task_week1/deploy).
+# One "edge" Nginx is the only thing open to the internet; it routes each subdomain to an app.
+# Variables come from .env (written by user_data, not committed):
+#   REGISTRY   = <account>.dkr.ecr.us-east-1.amazonaws.com
+#   DOMAIN     = your domain
+#   NGINX_MODE = http (before the certificate) | https (after certbot)
+name: devops-lab
+
+services:
+  edge:
+    image: nginx:1.27-alpine
+    container_name: edge # fixed name so certbot's hook can run: docker exec edge nginx -s reload
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN} # used inside the *.template files
+    volumes:
+      # The nginx image turns /etc/nginx/templates/X.template into /etc/nginx/conf.d/X at start,
+      # replacing ${DOMAIN}. Switching http <-> https = change NGINX_MODE and recreate this container.
+      - ./nginx/${NGINX_MODE:-http}:/etc/nginx/templates:ro
+      - /var/www/certbot:/var/www/certbot:ro # files certbot puts there to prove domain ownership
+      - /etc/letsencrypt:/etc/letsencrypt:ro # certificates created by certbot on the host
+    depends_on:
+      - node-frontend
+    networks:
+      - node # add one network per app later (python, go, ...)
+
+  # ---------------- Node app (React + Express + MongoDB) ----------------
+  node-frontend:
+    image: ${REGISTRY}/devops-lab/node-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - node-backend
+    networks:
+      - node
+
+  node-backend:
+    image: ${REGISTRY}/devops-lab/node-backend:latest
+    restart: unless-stopped
+    environment:
+      MONGO_URL: mongodb://node-mongo:27017
+    depends_on:
+      node-mongo:
+        condition: service_healthy
+    networks:
+      node:
+        aliases:
+          - backend # the frontend image's nginx.conf calls http://backend:3000
+
+  node-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - node-mongo-data:/data/db
+      - ../apps/nodejs/db/seed.js:/docker-entrypoint-initdb.d/seed.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - node
+
+# One private network per app: the Node containers cannot even see the other apps' databases.
+networks:
+  node: {}
+
+volumes:
+  node-mongo-data: {}

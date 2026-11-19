@@ -1,0 +1,21 @@
+# MODE http: used BEFORE the certificate exists (NGINX_MODE=http in .env).
+# ${DOMAIN} is replaced at container start; nginx's own $variables are left untouched.
+
+server {
+    listen 80 default_server; # also answers requests by IP (http://<Elastic IP>)
+    server_name node.${DOMAIN};
+
+    # Let's Encrypt "HTTP-01 challenge": certbot writes a token file here, Let's Encrypt fetches
+    # http://node.<domain>/.well-known/acme-challenge/<token> to prove we control the domain.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://node-frontend; # container name on the "node" network, port 80
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
