@@ -41,6 +41,12 @@ variable "github_repo_with_ids" {
   default     = "MortimerN4h@159760215/devops-lab@1462580632"
 }
 
+variable "app_instance_name" {
+  description = "Name tag of the app server (terraform/app). The deploy job may run commands ONLY there."
+  type        = string
+  default     = "devops-app"
+}
+
 variable "github_branch" {
   description = "Only workflows running on this branch may assume the role"
   type        = string

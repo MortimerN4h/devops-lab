@@ -99,6 +99,13 @@ resource "aws_iam_role_policy_attachment" "ecr_read" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# Lets the SSM agent (pre-installed on Ubuntu AMIs) register the server with AWS Systems Manager.
+# GitHub Actions then deploys with "SSM Run Command": no SSH, no open port 22, no private key in GitHub.
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.app.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "app" {
   name = "devops-app-profile"
   role = aws_iam_role.app.name

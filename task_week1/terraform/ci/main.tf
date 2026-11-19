@@ -130,3 +130,44 @@ resource "aws_iam_role_policy" "ecr_push" {
     ]
   })
 }
+
+# PERMISSION policy for the DEPLOY job: run ONE kind of command (a shell script) on the app server only.
+data "aws_caller_identity" "me" {}
+
+resource "aws_iam_role_policy" "deploy" {
+  name = "deploy-ssm"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FindAppServer" # look up the instance ID by its Name tag (Describe* cannot be limited)
+        Effect   = "Allow"
+        Action   = "ec2:DescribeInstances"
+        Resource = "*"
+      },
+      {
+        Sid      = "UseShellDocument" # SendCommand needs permission on the DOCUMENT (what to run) ...
+        Effect   = "Allow"
+        Action   = "ssm:SendCommand"
+        Resource = "arn:aws:ssm:${var.region}::document/AWS-RunShellScript"
+      },
+      {
+        Sid      = "OnlyTheAppServer" # ... AND on the INSTANCE (where): only one tagged Name=devops-app
+        Effect   = "Allow"
+        Action   = "ssm:SendCommand"
+        Resource = "arn:aws:ec2:${var.region}:${data.aws_caller_identity.me.account_id}:instance/*"
+        Condition = {
+          StringEquals = { "ssm:resourceTag/Name" = var.app_instance_name }
+        }
+      },
+      {
+        Sid      = "ReadCommandResult" # wait for the command and read its output
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"]
+        Resource = "*"
+      },
+    ]
+  })
+}
