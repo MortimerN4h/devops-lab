@@ -48,7 +48,7 @@ resource "aws_security_group" "app" {
   description = "Web from anywhere, SSH only from the bastion"
 
   ingress {
-    description = "HTTP (also used by Let's Encrypt to verify the domain)"
+    description = "HTTP (also used by Lets Encrypt to verify the domain)" # AWS forbids the ' character here
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
