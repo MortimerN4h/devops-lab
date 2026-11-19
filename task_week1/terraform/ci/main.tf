@@ -83,13 +83,16 @@ resource "aws_iam_role" "github_actions" {
       Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
-        StringEquals = {
-          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        }
         # sub = "repo:<owner>/<repo>:ref:refs/heads/<branch>" -> only OUR repo, only branch main.
         # Without this condition ANY GitHub repo in the world could assume the role!
-        StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}"
+        # GitHub sends one of two formats (newer repos include numeric IDs), so accept both.
+        # A list inside a condition means OR: the token's sub must equal ONE of these values.
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
+            "repo:${var.github_repo_with_ids}:ref:refs/heads/${var.github_branch}",
+          ]
         }
       }
     }]

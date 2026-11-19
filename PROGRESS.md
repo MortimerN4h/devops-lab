@@ -55,19 +55,19 @@ Mục đích học: network, DNS, cert, Dockerfile, compose, DB admin.
 - [ ] Bước 7: Java Quarkus + DynamoDB local
 - [ ] Bước 8: Ruby on Rails API + PostgreSQL (Gemfile)
 - [ ] Bước 9: docker-compose chạy tất cả + Nginx reverse proxy theo subdomain (cục bộ)
-- [ ] Bước 11: AWS: ECR, OIDC + IAM role cho GitHub Actions *(làm sớm, ngay sau Node)*
+- [x] Bước 11: AWS: ECR, OIDC + IAM role cho GitHub Actions *(làm sớm, ngay sau Node)*
 - [ ] Bước 15: GitHub Actions: build + push ECR (mỗi app thêm 1 job), rồi deploy tự động lên EC2
-- [ ] Bước 12: Terraform: EC2 + user_data pull ECR + deploy
+- [x] Bước 12: Terraform: EC2 + user_data pull ECR + deploy
 - [ ] Bước 12b: Ansible (cấu hình EC2: cài docker, pull ECR, chạy compose)
-- [ ] Bước 13: Route53 subdomain
-- [ ] Bước 14: HTTPS certbot
+- [x] Bước 13: Route53 subdomain
+- [x] Bước 14: HTTPS certbot
 **Thứ tự CHỐT (2026-11-18): làm trọn 1 lát dọc với app Node trước** = Bước 11 → 12 (EC2 app + Nginx) → 13 (Route53 `node.<domain>`) → 14 (HTTPS) → 15 (deploy tự động); sau đó mỗi app mới chỉ thêm image ECR + 1 server block Nginx + 1 bản ghi DNS + cert. Rồi mới tới Bước 3-8.
 (Thứ tự có thể điều chỉnh cùng user. Chi phí: destroy tài nguyên AWS sau mỗi buổi thử; stop bastion khi không dùng.)
 
 ## 7. Bước hiện tại
 - **CI tạm bỏ qua**: tài khoản GitHub bị khóa billing (chờ 1-3 ngày: thêm thẻ / GitHub Student). Trong lúc chờ, build + push image Node lên ECR BẰNG TAY từ bastion (vòng `for c in frontend backend` → `docker build -t <registry>/devops-lab/node-$c:<sha> -t ...:latest` + `docker push --all-tags`). Khi mở khóa: `gh run rerun --failed`.
 - Bước 11 xong phần AWS: `terraform/ci/` (ECR `devops-lab/node-*`, OIDC, role `devops-lab-github-actions`), variable `AWS_ROLE_ARN` đã đặt cho repo `devops-lab`.
-- **Bước 12-14 (code đã viết, chờ user chạy)**, domain user mua ở nhà đăng ký ngoài:
+- **Bước 12-14 XONG (2026-11-19)**: `https://node.<domain>` chạy trên EC2 `devops-app`. Cách làm (để lặp lại cho app khác), domain user mua ở nhà đăng ký ngoài:
   1. `terraform/dns/` = hosted zone (giữ lâu dài, tách riêng để NS không đổi) → copy 4 `name_servers` sang nhà đăng ký → kiểm tra `dig NS <domain> +short`.
   2. Bastion: `ssh-keygen -t ed25519 -f ~/.ssh/devops-app -N ""`. Push `task_week1/deploy/` lên GitHub TRƯỚC (user_data clone repo public).
   3. `terraform/app/` = EC2 `devops-app` (t3.small, SG 80/443 mở, 22 chỉ từ SG bastion, role chỉ ECR read-only, Elastic IP, bản ghi A `node.<domain>`). user_data: swap, Docker, certbot, `amazon-ecr-credential-helper` (pull ECR không cần docker login), clone repo → `/opt/devops-lab/task_week1/deploy`, ghi `.env` (REGISTRY, DOMAIN, NGINX_MODE=http), `docker compose up -d`.
@@ -75,6 +75,8 @@ Mục đích học: network, DNS, cert, Dockerfile, compose, DB admin.
   5. HTTPS: trên app server `sudo certbot certonly --webroot -w /var/www/certbot -d node.<domain> ... --deploy-hook "docker exec edge nginx -s reload"` → `NGINX_MODE=https` trong `.env` → `docker compose up -d edge` → `sudo certbot renew --dry-run`.
 - Sau đó: Bước 15 (deploy tự động khi CI mở khóa) và Bước 3 (Python). App mới = thêm service + network + server block + bản ghi A + `certbot -d <app>.<domain>`.
 - Chi phí app server: t3.small ~$0.02/h + Elastic IP ~$0.005/h + zone $0.5/tháng. Destroy `terraform/app` khi không dùng (mất data Mongo + cert; Let's Encrypt giới hạn 5 cert trùng tên/tuần). KHÔNG destroy `terraform/dns`.
+- **Dung lượng app server**: t3.small (2GB) đủ cho Node + vài app nhẹ (Go, Python). Khi thêm app Java (Spring/Quarkus) + DynamoDB local → nâng `instance_type` (account Free plan chỉ cho t3/t4g micro/small, `c7i-flex.large` 4GB, `m7i-flex.large` 8GB → chọn **m7i-flex.large** (8GB, chỉ đắt hơn c7i-flex ~10-15%); t3.medium KHÔNG được phép) trong `terraform.tfvars` rồi `terraform apply` (đổi tại chỗ: stop → đổi loại → start, GIỮ ổ đĩa/data/cert/Elastic IP, downtime ~1-2 phút, KHÔNG cần destroy). Giảm RAM: dùng chung 1 MySQL (PHP + Spring) và 1 PostgreSQL (Python + Rails), mỗi app 1 database; giới hạn JVM (`-XX:MaxRAMPercentage`), Mongo `--wiredTigerCacheSizeGB 0.25`, `mem_limit` trong compose. Theo dõi: `docker stats`, `free -h`.
+- **CI OIDC lỗi `Not authorized to perform sts:AssumeRoleWithWebIdentity`** (19/11): CloudTrail cho thấy GitHub gửi `sub` dạng MỚI có ID số `repo:MortimerN4h@159760215/devops-lab@1462580632:ref:refs/heads/main` (chống chiếm tên repo). Đã sửa trust policy chấp nhận cả 2 dạng (biến `github_repo_with_ids`) → `terraform apply` ở `terraform/ci` rồi `gh run rerun --failed`. Mẹo debug OIDC: CloudTrail event `AssumeRoleWithWebIdentity` → `userName` = sub thật.
 
 ## 8. Nhật ký / Kiến thức đã học
 - 2026-11-17: swap (fallocate/chmod 600/mkswap/swapon, fstab). Build ở nơi khác rồi push ECR, EC2 chỉ pull+chạy. Terraform = tạo hạ tầng, Ansible = cấu hình trong máy.

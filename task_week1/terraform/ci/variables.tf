@@ -30,6 +30,17 @@ variable "github_repo" {
   default     = "MortimerN4h/devops-lab"
 }
 
+variable "github_repo_with_ids" {
+  description = <<-EOT
+    The same repo in GitHub's newer OIDC "sub" format: owner@ownerID/name@repoID.
+    GitHub adds the numeric IDs so a deleted or renamed repo cannot be re-created by someone else
+    under the same name and inherit our AWS access. Read the real value from CloudTrail
+    (AssumeRoleWithWebIdentity event -> userName).
+  EOT
+  type        = string
+  default     = "MortimerN4h@159760215/devops-lab@1462580632"
+}
+
 variable "github_branch" {
   description = "Only workflows running on this branch may assume the role"
   type        = string
