@@ -8,7 +8,6 @@ on:
       - "task_week1/apps/nodejs/**"
       - "task_week1/tests/**"
       - "task_week1/API.md"
-      - "task_week1/deploy/**"
       - ".github/workflows/node.yml"
   workflow_dispatch: {} # adds a "Run workflow" button in the Actions tab
 
@@ -85,64 +84,23 @@ jobs:
   deploy:
     needs: push
     runs-on: ubuntu-latest
-    # Never run two deploys at the same time; a newer one waits for the running one to finish.
+    # The SAME group in every workflow: only one deploy touches the server at a time.
     concurrency:
-      group: deploy-node
+      group: deploy-app-server
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v5 # needed to find the local action below
+
       - name: Log in to AWS with OIDC (no stored keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Find the app server
-        id: find
-        run: |
-          ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=devops-app" "Name=instance-state-name,Values=running" \
-            --query 'Reservations[].Instances[].InstanceId' --output text)
-          if [ -z "$ID" ]; then
-            # Server destroyed/stopped to save money: the images are in ECR, so just skip.
-            echo "::notice::No running devops-app server, skipping deploy"
-          fi
-          echo "id=$ID" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy with SSM Run Command
-        if: steps.find.outputs.id != ''
-        env:
-          INSTANCE_ID: ${{ steps.find.outputs.id }}
-        run: |
-          # The script that runs ON THE SERVER, as root, one line per command.
-          SCRIPT=$(cat <<'EOS'
-          set -eu
-          export HOME=/root
-          sudo -u ubuntu -H git -C /opt/devops-lab pull --ff-only
-          cd /opt/devops-lab/task_week1/deploy
-          docker compose pull node-frontend node-backend
-          docker compose up -d
-          docker image prune -f
-          docker compose ps
-          EOS
-          )
-          # jq turns the lines into the JSON SSM expects: {"commands": ["line1", "line2", ...]}
-          PARAMS=$(printf '%s\n' "$SCRIPT" | sed 's/^ *//' | jq -Rn '{commands: [inputs]}')
-
-          CMD_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
-            --comment "deploy node ${GITHUB_SHA::7}" \
-            --parameters "$PARAMS" \
-            --query 'Command.CommandId' --output text)
-          echo "SSM command: $CMD_ID"
-
-          # Wait until it finishes (fails if the script failed), then always print the server's output.
-          STATUS=0
-          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" || STATUS=$?
-          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
-            --query '[Status, StandardOutputContent, StandardErrorContent]' --output text
-          exit $STATUS
+      - name: Deploy (git pull + deploy.sh via SSM)
+        id: deploy
+        uses: ./.github/actions/deploy-to-server
 
       - name: Smoke test the public URL
-        if: steps.find.outputs.id != '' && vars.NODE_URL != ''
+        if: steps.deploy.outputs.instance-id != '' && vars.NODE_URL != ''
         run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "${{ vars.NODE_URL }}/api/health"

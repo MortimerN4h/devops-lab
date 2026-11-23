@@ -1,0 +1,58 @@
+# Composite action = a few steps packaged under one name, reused by every app workflow:
+#   - uses: ./.github/actions/deploy-to-server
+# The caller must check out the repo (to find this file) and log in to AWS first.
+name: Deploy to the app server
+description: git pull + deploy.sh on the devops-app EC2, through SSM Run Command
+
+outputs:
+  instance-id:
+    description: ID of the server that was deployed; empty when no server is running (deploy skipped)
+    value: ${{ steps.find.outputs.id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find the app server
+      id: find
+      shell: bash # composite steps must say which shell to use
+      run: |
+        ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=devops-app" "Name=instance-state-name,Values=running" \
+          --query 'Reservations[].Instances[].InstanceId' --output text)
+        if [ -z "$ID" ]; then
+          # Server destroyed/stopped to save money: the images are in ECR, so just skip.
+          echo "::notice::No running devops-app server, skipping deploy"
+        fi
+        echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+    - name: Run deploy.sh with SSM Run Command
+      if: steps.find.outputs.id != ''
+      shell: bash
+      env:
+        INSTANCE_ID: ${{ steps.find.outputs.id }}
+      run: |
+        # The script that runs ON THE SERVER, as root. git pull first, so deploy.sh is the new version.
+        SCRIPT=$(cat <<'EOS'
+        set -eu
+        export HOME=/root
+        sudo -u ubuntu -H git -C /opt/devops-lab pull --ff-only
+        bash /opt/devops-lab/task_week1/deploy/deploy.sh
+        EOS
+        )
+        # jq turns the lines into the JSON SSM expects: {"commands": ["line1", "line2", ...]}
+        PARAMS=$(printf '%s\n' "$SCRIPT" | sed 's/^ *//' | jq -Rn '{commands: [inputs]}')
+
+        CMD_ID=$(aws ssm send-command \
+          --instance-ids "$INSTANCE_ID" \
+          --document-name AWS-RunShellScript \
+          --comment "$GITHUB_WORKFLOW ${GITHUB_SHA::7}" \
+          --parameters "$PARAMS" \
+          --query 'Command.CommandId' --output text)
+        echo "SSM command: $CMD_ID"
+
+        # Wait until it finishes (fails if the script failed), then always print the server's output.
+        STATUS=0
+        aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" || STATUS=$?
+        aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+          --query '[Status, StandardOutputContent, StandardErrorContent]' --output text
+        exit $STATUS

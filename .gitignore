@@ -14,4 +14,4 @@ DAILY_REPORT.md
 # Dependencies / build output
 node_modules/
 __pycache__/
-target/
+target/.nginx-hash

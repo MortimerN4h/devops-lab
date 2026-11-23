@@ -1,0 +1,34 @@
+# Deploy-config only: runs when the server's config changes (compose, nginx, deploy.sh) but no app code.
+# Nothing to test or build: the images in ECR are unchanged, the server just needs git pull + deploy.sh.
+name: deploy-config
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "task_week1/deploy/**"
+      - ".github/actions/deploy-to-server/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {} # "Run workflow" button = redeploy by hand
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # The SAME group in every workflow: only one deploy touches the server at a time.
+    concurrency:
+      group: deploy-app-server
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5 # needed to find the local action below
+
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: ./.github/actions/deploy-to-server

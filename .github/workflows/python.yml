@@ -1,5 +1,4 @@
-# CI/CD for the Python app: test -> build + push images to ECR.
-# (The deploy job is added once the server knows how to run the Python containers.)
+# CI/CD for the Python app: test -> build + push images to ECR -> deploy to the app server (via AWS SSM).
 name: python-app
 
 on:
@@ -81,3 +80,28 @@ jobs:
             ${{ steps.ecr.outputs.registry }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:latest
           cache-from: type=gha,scope=python-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=python-${{ matrix.component }}
+
+  # ---------- CD: deploy to the app server (only if both images were pushed) ----------
+  deploy:
+    needs: push
+    runs-on: ubuntu-latest
+    # The SAME group in every workflow: only one deploy touches the server at a time.
+    concurrency:
+      group: deploy-app-server
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5 # needed to find the local action below
+
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy (git pull + deploy.sh via SSM)
+        id: deploy
+        uses: ./.github/actions/deploy-to-server
+
+      - name: Smoke test the public URL
+        if: steps.deploy.outputs.instance-id != '' && vars.PYTHON_URL != ''
+        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "${{ vars.PYTHON_URL }}/api/health"
