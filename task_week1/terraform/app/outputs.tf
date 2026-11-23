@@ -15,3 +15,7 @@ output "ssh_command" {
 output "python_url" {
   value = "http://${aws_route53_record.python.name}"
 }
+
+output "go_url" {
+  value = "http://${aws_route53_record.go.name}"
+}

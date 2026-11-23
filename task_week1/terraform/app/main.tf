@@ -169,3 +169,12 @@ resource "aws_route53_record" "python" {
   ttl     = 300
   records = [aws_eip.app.public_ip]
 }
+
+# ---- DNS: go.<domain> -> the same Elastic IP ----
+resource "aws_route53_record" "go" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "go.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.app.public_ip]
+}

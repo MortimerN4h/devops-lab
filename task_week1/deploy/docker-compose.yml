@@ -26,9 +26,11 @@ services:
     depends_on:
       - node-frontend
       - python-frontend
+      - go-frontend
     networks: # edge joins EVERY app network (it must reach every frontend); apps cannot see each other
       - node
       - python
+      - go
 
   # ---------------- Node app (React + Express + MongoDB) ----------------
   node-frontend:
@@ -107,11 +109,65 @@ services:
     networks:
       - python
 
+  # ---------------- Go app (React + Gin + Redis) ----------------
+  go-frontend:
+    image: ${REGISTRY}/devops-lab/go-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - go-backend
+    networks:
+      - go
+
+  go-backend:
+    image: ${REGISTRY}/devops-lab/go-backend:latest
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: go-redis:6379
+    depends_on:
+      go-redis-seed:
+        condition: service_completed_successfully # seed finished (or skipped) with exit code 0
+    networks:
+      go:
+        aliases:
+          - backend # the frontend image's nginx.conf calls http://backend:8080
+
+  go-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"] # write every change to /data (survives restarts)
+    volumes:
+      - go-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - go
+
+  # One-shot job: adds the sample notes, then exits. Safe to run again (skips if data exists).
+  # Its name does not end in -frontend/-backend, so deploy.sh does not try to pull it.
+  go-redis-seed:
+    image: redis:7-alpine
+    restart: "no"
+    entrypoint: ["sh", "/seed.sh"]
+    environment:
+      REDIS_HOST: go-redis # seed.sh defaults to "redis" (the service name in apps/go)
+    volumes:
+      - ../apps/go/db/seed.sh:/seed.sh:ro
+    depends_on:
+      go-redis:
+        condition: service_healthy
+    networks:
+      - go
+
 # One private network per app: the Node containers cannot even see the other apps' databases.
 networks:
   node: {}
   python: {}
+  go: {}
 
 volumes:
   node-mongo-data: {}
   python-pg-data: {}
+  go-redis-data: {}
