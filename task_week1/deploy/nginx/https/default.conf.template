@@ -1,4 +1,4 @@
-# MODE https: used AFTER certbot created /etc/letsencrypt/live/node.<domain>/ (NGINX_MODE=https).
+# MODE https: used AFTER certbot created /etc/letsencrypt/live/<app>.<domain>/ for EVERY app below (NGINX_MODE=https).
 
 # Port 80: keep serving the challenge (needed for renewals), send everything else to HTTPS.
 server {
@@ -25,6 +25,26 @@ server {
 
     location / {
         proxy_pass http://node-frontend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ---------------- Python app ----------------
+# Same shape as the Node block: only server_name, the certificate folder and proxy_pass change.
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name python.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/python.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/python.${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://python-frontend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

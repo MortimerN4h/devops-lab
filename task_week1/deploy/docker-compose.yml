@@ -4,6 +4,7 @@
 #   REGISTRY   = <account>.dkr.ecr.us-east-1.amazonaws.com
 #   DOMAIN     = your domain
 #   NGINX_MODE = http (before the certificate) | https (after certbot)
+#   PYTHON_DB_PASSWORD = Postgres password of the Python app (e.g. openssl rand -hex 16)
 name: devops-lab
 
 services:
@@ -24,8 +25,10 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro # certificates created by certbot on the host
     depends_on:
       - node-frontend
-    networks:
-      - node # add one network per app later (python, go, ...)
+      - python-frontend
+    networks: # edge joins EVERY app network (it must reach every frontend); apps cannot see each other
+      - node
+      - python
 
   # ---------------- Node app (React + Express + MongoDB) ----------------
   node-frontend:
@@ -63,9 +66,52 @@ services:
     networks:
       - node
 
+  # ---------------- Python app (Angular + FastAPI + PostgreSQL) ----------------
+  python-frontend:
+    image: ${REGISTRY}/devops-lab/python-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - python-backend
+    networks:
+      - python
+
+  python-backend:
+    image: ${REGISTRY}/devops-lab/python-backend:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://notes:${PYTHON_DB_PASSWORD}@python-postgres:5432/notesdb
+    depends_on:
+      python-postgres:
+        condition: service_healthy
+    networks:
+      python:
+        aliases:
+          - backend # the frontend image's nginx.conf calls http://backend:8000
+
+  python-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notes
+      # ":?" = stop with this error if the variable is missing, instead of starting with an empty password
+      POSTGRES_PASSWORD: ${PYTHON_DB_PASSWORD:?add PYTHON_DB_PASSWORD to .env}
+      POSTGRES_DB: notesdb
+    volumes:
+      - python-pg-data:/var/lib/postgresql/data
+      - ../apps/python/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U notes -d notesdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - python
+
 # One private network per app: the Node containers cannot even see the other apps' databases.
 networks:
   node: {}
+  python: {}
 
 volumes:
   node-mongo-data: {}
+  python-pg-data: {}

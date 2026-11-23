@@ -11,3 +11,7 @@ output "ssh_command" {
   description = "Run on the BASTION (private IP: both machines are in the same VPC)"
   value       = "ssh -i ~/.ssh/devops-app ubuntu@${aws_instance.app.private_ip}"
 }
+
+output "python_url" {
+  value = "http://${aws_route53_record.python.name}"
+}

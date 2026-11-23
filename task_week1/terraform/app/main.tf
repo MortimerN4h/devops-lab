@@ -134,6 +134,13 @@ resource "aws_instance" "app" {
   tags = {
     Name = "devops-app"
   }
+
+  # The SSM parameter above always returns the NEWEST Ubuntu image, and Canonical publishes one every
+  # few weeks. Without this, every new image would make `plan` destroy and rebuild the server.
+  # Updates on a running server come from apt; a new AMI is used only when the server is rebuilt.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 # ---- Fixed public IP: DNS points here, so it must not change on stop/start ----
@@ -151,5 +158,14 @@ resource "aws_route53_record" "node" {
   name    = "node.${var.domain_name}"
   type    = "A" # A record = name -> IPv4 address
   ttl     = 300 # resolvers may cache the answer for 5 minutes
+  records = [aws_eip.app.public_ip]
+}
+
+# ---- DNS: python.<domain> -> the same Elastic IP (edge picks the app by server_name) ----
+resource "aws_route53_record" "python" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "python.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
   records = [aws_eip.app.public_ip]
 }
