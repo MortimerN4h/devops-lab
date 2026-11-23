@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - "task_week1/deploy/**"
+      - "!task_week1/deploy/**.md" # "!" = except: editing the README needs no deploy (must come AFTER the line above)
       - ".github/actions/deploy-to-server/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch: {} # "Run workflow" button = redeploy by hand
