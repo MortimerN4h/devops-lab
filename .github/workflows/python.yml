@@ -1,0 +1,83 @@
+# CI/CD for the Python app: test -> build + push images to ECR.
+# (The deploy job is added once the server knows how to run the Python containers.)
+name: python-app
+
+on:
+  push:
+    branches: [main]
+    paths: # run only when something this app depends on changes (saves free minutes)
+      - "task_week1/apps/python/**"
+      - "task_week1/tests/**"
+      - "task_week1/API.md"
+      - ".github/workflows/python.yml"
+  workflow_dispatch: {} # adds a "Run workflow" button in the Actions tab
+
+permissions:
+  id-token: write # allow the job to request the GitHub OIDC token (needed for AWS login)
+  contents: read  # allow actions/checkout to read the repo
+
+env:
+  AWS_REGION: us-east-1
+  APP_DIR: task_week1/apps/python
+  IMAGE_PREFIX: devops-lab/python # ECR repos: devops-lab/python-frontend, devops-lab/python-backend
+  BASE_URL: http://localhost:18081 # the Python stack's local port (Node uses 18080); read by api-test.sh
+
+jobs:
+  # ---------- CI: does the app work? ----------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start the stack
+        working-directory: ${{ env.APP_DIR }}
+        run: docker compose up -d --build
+
+      - name: Wait for the API
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf "$BASE_URL/api/health" && exit 0
+            sleep 2
+          done
+          echo "API did not become ready"; exit 1
+
+      - name: API tests
+        run: ./task_week1/tests/api-test.sh
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: ${{ env.APP_DIR }}
+        run: docker compose logs
+
+  # ---------- CD: build + push images (only if tests passed) ----------
+  push:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend] # two parallel jobs, one per image
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.APP_DIR }}/${{ matrix.component }}
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:latest
+          cache-from: type=gha,scope=python-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=python-${{ matrix.component }}

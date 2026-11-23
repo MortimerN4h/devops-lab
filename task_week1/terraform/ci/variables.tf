@@ -15,7 +15,7 @@ variable "project" {
 variable "repositories" {
   description = "One ECR repository per image. Add the next app's images here (e.g. python-backend)."
   type        = list(string)
-  default     = ["node-frontend", "node-backend"]
+  default     = ["node-frontend", "node-backend", "python-frontend", "python-backend"]
 }
 
 variable "keep_images" {
