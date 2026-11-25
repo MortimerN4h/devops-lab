@@ -7,6 +7,7 @@
 #   PYTHON_DB_PASSWORD = Postgres password of the Python app (e.g. openssl rand -hex 16)
 #   GO_DB_PASSWORD     = Postgres password of the Go app (same way)
 #   JAVA_DB_PASSWORD, JAVA_DB_ROOT_PASSWORD = MySQL passwords of the Java app (app user, admin user)
+# The .NET app needs NO password: it reaches DynamoDB with the server's IAM role (terraform/app).
 name: devops-lab
 
 services:
@@ -30,11 +31,13 @@ services:
       - python-frontend
       - go-frontend
       - java-frontend
+      - dotnet-frontend
     networks: # edge joins EVERY app network (it must reach every frontend); apps cannot see each other
       - node
       - python
       - go
       - java
+      - dotnet
 
   # ---------------- Node app (React + Express + MongoDB) ----------------
   node-frontend:
@@ -211,12 +214,36 @@ services:
     networks:
       - java
 
+  # ---------------- .NET app (React + ASP.NET Core + DynamoDB on AWS) ----------------
+  # No database container: the table is the REAL DynamoDB table created by terraform/app.
+  dotnet-frontend:
+    image: ${REGISTRY}/devops-lab/dotnet-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - dotnet-backend
+    networks:
+      - dotnet
+
+  dotnet-backend:
+    image: ${REGISTRY}/devops-lab/dotnet-backend:latest
+    restart: unless-stopped
+    environment:
+      # No DYNAMODB_ENDPOINT (unlike apps/dotnet/docker-compose.yml) -> the SDK calls real AWS.
+      # No keys either: the SDK gets temporary ones from the EC2 role via IMDS (hop limit 2).
+      TABLE_NAME: devops-lab-dotnet-notes # = terraform output dotnet_table (a name, not a secret)
+      AWS_REGION: us-east-1
+    networks:
+      dotnet:
+        aliases:
+          - backend # the frontend image's nginx.conf calls http://backend:8080
+
 # One private network per app: the Node containers cannot even see the other apps' databases.
 networks:
   node: {}
   python: {}
   go: {}
   java: {}
+  dotnet: {}
 
 volumes:
   node-mongo-data: {}

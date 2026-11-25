@@ -6,7 +6,7 @@ Server clone repo về `/opt/devops-lab`, rồi chạy compose trong `/opt/devop
 > Mục tiêu file này: hiểu **một thay đổi đi từ `git push` tới trình duyệt như thế nào**, mỗi file ở đây làm gì,
 > và **thêm một app mới** cần làm những bước nào (checklist ở mục 8).
 
-Hiện đang chạy: `https://node.<domain>` (React + Express + MongoDB), `https://python.<domain>` (Angular + FastAPI + PostgreSQL), `https://go.<domain>` (React + Gin + PostgreSQL, Redis cache) và `https://java.<domain>` (Angular + Spring Boot + MySQL); sơ đồ dưới chỉ vẽ hai app đầu.
+Hiện đang chạy: `https://node.<domain>` (React + Express + MongoDB), `https://python.<domain>` (Angular + FastAPI + PostgreSQL), `https://go.<domain>` (React + Gin + PostgreSQL, Redis cache), `https://java.<domain>` (Angular + Spring Boot + MySQL) và `https://dotnet.<domain>` (React + ASP.NET Core + DynamoDB thật trên AWS, không có container DB); sơ đồ dưới chỉ vẽ hai app đầu.
 
 ## 1. Toàn cảnh
 
@@ -80,7 +80,7 @@ edge:
     - ./nginx/${NGINX_MODE:-http}:/etc/nginx/templates:ro   # chọn bộ cấu hình http hoặc https
     - /var/www/certbot:/var/www/certbot:ro                  # nơi certbot đặt file xác minh tên miền
     - /etc/letsencrypt:/etc/letsencrypt:ro                  # cert do certbot tạo trên máy host
-  networks: [node, python, go, java]   # nối vào MỌI network app
+  networks: [node, python, go, java, dotnet]   # nối vào MỌI network app
 ```
 
 - **`${VAR}`** lấy từ `.env` cùng thư mục (compose tự đọc). **`${VAR:-http}`** = dùng `http` nếu biến trống.
