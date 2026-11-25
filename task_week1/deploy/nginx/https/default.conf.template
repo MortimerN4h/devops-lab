@@ -4,8 +4,15 @@
 # (new IP) is found. Without this, nginx resolves names only once at start and keeps the old IP -> 502.
 resolver 127.0.0.11 valid=10s ipv6=off;
 
+# Access log = the default "combined" columns (so $9 is still the status) + which app (host) + how long (seconds).
+# Used by ../../logs.sh. access_log is set in EVERY server block: one at http level would ADD a second log
+# next to the image's default one (each request written twice), a server-level one REPLACES it.
+log_format edge '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent '
+                '"$http_referer" "$http_user_agent" host=$host rt=$request_time';
+
 # Port 80: keep serving the challenge (needed for renewals), send everything else to HTTPS.
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80 default_server;
     server_name _;
 
@@ -19,6 +26,7 @@ server {
 }
 
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 443 ssl;
     http2 on;
     server_name node.${DOMAIN};
@@ -40,6 +48,7 @@ server {
 # ---------------- Python app ----------------
 # Same shape as the Node block: only server_name, the certificate folder and proxy_pass change.
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 443 ssl;
     http2 on;
     server_name python.${DOMAIN};
@@ -60,6 +69,7 @@ server {
 
 # ---------------- Go app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 443 ssl;
     http2 on;
     server_name go.${DOMAIN};
@@ -80,6 +90,7 @@ server {
 
 # ---------------- Java app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 443 ssl;
     http2 on;
     server_name java.${DOMAIN};
@@ -100,6 +111,7 @@ server {
 
 # ---------------- .NET app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 443 ssl;
     http2 on;
     server_name dotnet.${DOMAIN};

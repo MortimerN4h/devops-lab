@@ -34,11 +34,12 @@ python.<domain> ─┴─► cùng IP ─┼─► HTTPS + chọn app theo serve
 
 | File | Vai trò |
 |---|---|
-| `docker-compose.yml` | Danh sách container production: edge + 3 container mỗi app. Dùng `image:` từ ECR, **không build** |
+| `docker-compose.yml` | Danh sách container production: edge + frontend/backend/DB mỗi app (.NET không có DB container). Dùng `image:` từ ECR, **không build** |
 | `nginx/http/default.conf.template` | Cấu hình edge **trước khi có cert** (chỉ cổng 80) |
 | `nginx/https/default.conf.template` | Cấu hình edge **sau khi có cert**: 80 chuyển sang 443, mỗi app một block 443. **Một file chung cho mọi app** |
 | `deploy.sh` | Script chạy trên server mỗi lần deploy (mục 5) |
-| `.env` *(chỉ có trên server, không commit)* | `REGISTRY`, `DOMAIN`, `NGINX_MODE`, `PYTHON_DB_PASSWORD` |
+| `logs.sh` | Đọc access log của edge: đếm theo status/app/IP, IP nào gọi gì, log thô (mục 9) |
+| `.env` *(chỉ có trên server, không commit)* | `REGISTRY`, `DOMAIN`, `NGINX_MODE`, các mật khẩu DB (`*_DB_PASSWORD`) |
 | `.nginx-hash` *(chỉ có trên server, không commit)* | Mã băm cấu hình nginx lần deploy trước, để biết khi nào phải restart edge |
 
 Ngoài thư mục này, deploy còn dùng: `../apps/*/db/` (file seed/tạo bảng, mount vào DB),
@@ -180,6 +181,31 @@ docker compose exec edge nginx -T | less            # xem cấu hình edge ĐANG
 sudo certbot certificates                           # danh sách cert + ngày hết hạn
 sudo certbot renew --dry-run                        # thử gia hạn (certbot tự gia hạn bằng systemd timer)
 ```
+
+### Đọc log truy cập: `logs.sh`
+
+Mọi request vào **mọi app** đều đi qua edge → log của edge là nguồn đầy đủ nhất. Mỗi dòng có dạng "combined" của nginx
+cộng thêm `host=` (app nào) và `rt=` (giây xử lý), định nghĩa bằng `log_format edge` trong 2 file template:
+
+```
+1.2.3.4 - - [25/Nov/2026:09:05:02 +0000] "GET /api/notes/99 HTTP/2.0" 404 60 "-" "curl/8.5.0" host=go.<domain> rt=0.002
+  IP              thời gian (UTC)          method + path           status bytes referer user-agent  app          thời gian xử lý
+```
+
+```bash
+./logs.sh                          # 5 giờ gần nhất: tổng, theo status, theo app, top IP, top request, theo giờ, chậm nhất, 10 dòng cuối
+./logs.sh -i 1.2.3.4               # một IP: gọi bao nhiêu lần, gọi gì, user-agent, TOÀN BỘ log thô của IP đó
+./logs.sh -s 24h -a go -p /api/    # chỉ API của app go trong 24 giờ
+./logs.sh -c 5xx -r                # chỉ in log thô của lỗi server
+./logs.sh -s 2026-11-25T00:00:00 -u 2026-11-26T00:00:00   # trọn một ngày
+./logs.sh -h                       # mọi tùy chọn
+```
+
+Cách hoạt động: `docker logs edge --since/--until` lấy log thô → `awk` tách cột (theo dấu `"` vì user-agent có dấu cách)
+và lọc → `cut`/`sort`/`uniq -c`/`sort -rn` đếm. Có thể đọc file đã lưu: `docker logs edge > edge.log` rồi `./logs.sh -f edge.log`.
+
+Giới hạn: log nằm trong container → **mất khi edge bị tạo lại** (đổi cấu hình compose của edge), không có cảnh báo.
+Production thật: gửi log về một chỗ tập trung (CloudWatch Logs, ELK, Loki) để truy vấn, vẽ biểu đồ, cảnh báo.
 
 ## 10. Dựng lại server từ đầu
 

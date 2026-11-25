@@ -5,7 +5,14 @@
 # (new IP) is found. Without this, nginx resolves names only once at start and keeps the old IP -> 502.
 resolver 127.0.0.11 valid=10s ipv6=off;
 
+# Access log = the default "combined" columns (so $9 is still the status) + which app (host) + how long (seconds).
+# Used by ../../logs.sh. access_log is set in EVERY server block: one at http level would ADD a second log
+# next to the image's default one (each request written twice), a server-level one REPLACES it.
+log_format edge '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent '
+                '"$http_referer" "$http_user_agent" host=$host rt=$request_time';
+
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80 default_server; # also answers requests by IP (http://<Elastic IP>)
     server_name node.${DOMAIN};
 
@@ -27,6 +34,7 @@ server {
 
 # ---------------- Python app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80;
     server_name python.${DOMAIN};
 
@@ -46,6 +54,7 @@ server {
 
 # ---------------- Go app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80;
     server_name go.${DOMAIN};
 
@@ -65,6 +74,7 @@ server {
 
 # ---------------- Java app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80;
     server_name java.${DOMAIN};
 
@@ -84,6 +94,7 @@ server {
 
 # ---------------- .NET app ----------------
 server {
+    access_log /var/log/nginx/access.log edge; # stdout of the container (docker logs edge)
     listen 80;
     server_name dotnet.${DOMAIN};
 
