@@ -1,0 +1,108 @@
+# CI/CD for the .NET app: test -> build + push images to ECR -> deploy to the app server (via AWS SSM).
+name: dotnet-app
+
+on:
+  push:
+    branches: [main]
+    paths: # run only when something this app depends on changes (saves free minutes)
+      - "task_week1/apps/dotnet/**"
+      - "task_week1/tests/**"
+      - "task_week1/API.md"
+      - ".github/workflows/dotnet.yml"
+  workflow_dispatch: {} # adds a "Run workflow" button in the Actions tab
+
+permissions:
+  id-token: write # allow the job to request the GitHub OIDC token (needed for AWS login)
+  contents: read  # allow actions/checkout to read the repo
+
+env:
+  AWS_REGION: us-east-1
+  APP_DIR: task_week1/apps/dotnet
+  IMAGE_PREFIX: devops-lab/dotnet # ECR repos: devops-lab/dotnet-frontend, devops-lab/dotnet-backend
+  BASE_URL: http://localhost:18084 # the .NET stack's local port (Node 18080, Python 18081, Go 18082, Java 18083); read by api-test.sh
+
+jobs:
+  # ---------- CI: does the app work? ----------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start the stack
+        working-directory: ${{ env.APP_DIR }}
+        run: docker compose up -d --build
+
+      - name: Wait for the API
+        # DynamoDB Local (a Java program) starts in a few seconds, then dynamodb-init creates + seeds the table
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf "$BASE_URL/api/health" && exit 0
+            sleep 2
+          done
+          echo "API did not become ready"; exit 1
+
+      - name: API tests
+        run: ./task_week1/tests/api-test.sh
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: ${{ env.APP_DIR }}
+        run: docker compose logs
+
+  # ---------- CD: build + push images (only if tests passed) ----------
+  push:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend] # two parallel jobs, one per image
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.APP_DIR }}/${{ matrix.component }}
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.IMAGE_PREFIX }}-${{ matrix.component }}:latest
+          cache-from: type=gha,scope=dotnet-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=dotnet-${{ matrix.component }}
+
+  # ---------- CD: deploy to the app server (only if both images were pushed) ----------
+  deploy:
+    needs: push
+    runs-on: ubuntu-latest
+    # The SAME group in every workflow: only one deploy touches the server at a time.
+    concurrency:
+      group: deploy-app-server
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5 # needed to find the local action below
+
+      - name: Log in to AWS with OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy (git pull + deploy.sh via SSM)
+        id: deploy
+        uses: ./.github/actions/deploy-to-server
+
+      - name: Smoke test the public URL
+        if: steps.deploy.outputs.instance-id != '' && vars.DOTNET_URL != ''
+        run: curl -fsS --retry 20 --retry-delay 3 --retry-all-errors "${{ vars.DOTNET_URL }}/api/health"
