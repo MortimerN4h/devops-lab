@@ -6,6 +6,7 @@
 #   NGINX_MODE = http (before the certificate) | https (after certbot)
 #   PYTHON_DB_PASSWORD = Postgres password of the Python app (e.g. openssl rand -hex 16)
 #   GO_DB_PASSWORD     = Postgres password of the Go app (same way)
+#   JAVA_DB_PASSWORD, JAVA_DB_ROOT_PASSWORD = MySQL passwords of the Java app (app user, admin user)
 name: devops-lab
 
 services:
@@ -28,10 +29,12 @@ services:
       - node-frontend
       - python-frontend
       - go-frontend
+      - java-frontend
     networks: # edge joins EVERY app network (it must reach every frontend); apps cannot see each other
       - node
       - python
       - go
+      - java
 
   # ---------------- Node app (React + Express + MongoDB) ----------------
   node-frontend:
@@ -162,13 +165,61 @@ services:
     networks:
       - go
 
+  # ---------------- Java app (Angular + Spring Boot + MySQL) ----------------
+  java-frontend:
+    image: ${REGISTRY}/devops-lab/java-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - java-backend
+    networks:
+      - java
+
+  java-backend:
+    image: ${REGISTRY}/devops-lab/java-backend:latest
+    restart: unless-stopped
+    environment: # override application.properties inside the jar
+      SPRING_DATASOURCE_URL: jdbc:mysql://java-mysql:3306/notesdb?connectionTimeZone=UTC
+      SPRING_DATASOURCE_USERNAME: notes
+      SPRING_DATASOURCE_PASSWORD: ${JAVA_DB_PASSWORD}
+    depends_on:
+      java-mysql:
+        condition: service_healthy
+    networks:
+      java:
+        aliases:
+          - backend # the frontend image's nginx.conf calls http://backend:8080
+
+  java-mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: notesdb
+      MYSQL_USER: notes
+      MYSQL_PASSWORD: ${JAVA_DB_PASSWORD:?add JAVA_DB_PASSWORD to .env}
+      MYSQL_ROOT_PASSWORD: ${JAVA_DB_ROOT_PASSWORD:?add JAVA_DB_ROOT_PASSWORD to .env}
+    volumes:
+      - java-mysql-data:/var/lib/mysql
+      - ../apps/java/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # $$ = a literal $ for compose: the CONTAINER's shell reads its own MYSQL_PASSWORD,
+      # so the password is not written into the healthcheck command (visible in docker inspect)
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u notes -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - java
+
 # One private network per app: the Node containers cannot even see the other apps' databases.
 networks:
   node: {}
   python: {}
   go: {}
+  java: {}
 
 volumes:
   node-mongo-data: {}
   python-pg-data: {}
   go-pg-data: {}
+  java-mysql-data: {}

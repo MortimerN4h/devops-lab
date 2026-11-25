@@ -62,3 +62,22 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+
+# ---------------- Java app ----------------
+server {
+    listen 80;
+    server_name java.${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        set $upstream http://java-frontend; # container name on the "java" network, port 80
+        proxy_pass $upstream; # a variable = resolve at request time (with the resolver above)
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

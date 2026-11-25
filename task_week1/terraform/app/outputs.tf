@@ -19,3 +19,7 @@ output "python_url" {
 output "go_url" {
   value = "http://${aws_route53_record.go.name}"
 }
+
+output "java_url" {
+  value = "http://${aws_route53_record.java.name}"
+}

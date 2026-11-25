@@ -178,3 +178,12 @@ resource "aws_route53_record" "go" {
   ttl     = 300
   records = [aws_eip.app.public_ip]
 }
+
+# ---- DNS: java.<domain> -> the same Elastic IP ----
+resource "aws_route53_record" "java" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "java.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.app.public_ip]
+}
