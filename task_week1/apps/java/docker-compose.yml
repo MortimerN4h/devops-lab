@@ -1,0 +1,39 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "18083:80" # 18080 Node, 18081 Python, 18082 Go: all apps can run at the same time
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    environment: # override application.properties (spring.datasource.url <-> SPRING_DATASOURCE_URL)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/notesdb?connectionTimeZone=UTC
+      SPRING_DATASOURCE_USERNAME: notes
+      SPRING_DATASOURCE_PASSWORD: notes
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.4 # 8.4 = current LTS (long-term support) line
+    environment: # the image creates the database + user at first start
+      MYSQL_DATABASE: notesdb
+      MYSQL_USER: notes
+      MYSQL_PASSWORD: notes          # local dev only; production reads it from .env
+      MYSQL_ROOT_PASSWORD: rootpass  # MySQL's admin account (required by the image)
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      # -h 127.0.0.1 = check over TCP: while init.sql runs, MySQL's temporary server has networking off,
+      # so the check only passes once the REAL server is up (same trick as pg_isready in the Python app)
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u notes -pnotes --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s # first start (create files + init.sql) takes ~20-30 s; failures don't count yet
+
+volumes:
+  mysql-data:
