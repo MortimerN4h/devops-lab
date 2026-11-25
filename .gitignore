@@ -15,3 +15,7 @@ DAILY_REPORT.md
 node_modules/
 __pycache__/
 target/.nginx-hash
+
+# .NET build output
+bin/
+obj/

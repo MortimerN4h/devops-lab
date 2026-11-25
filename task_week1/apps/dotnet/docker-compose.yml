@@ -1,0 +1,38 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "18084:80" # 18080 Node, 18081 Python, 18082 Go, 18083 Java
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    environment:
+      DYNAMODB_ENDPOINT: http://dynamodb:8000 # set = DynamoDB Local; production leaves it out = real AWS
+      TABLE_NAME: notes
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully # table created + seeded
+
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.0 # AWS's emulator: same API as the real DynamoDB, runs anywhere
+    # -inMemory: keep data in RAM only (lost when this container stops; the init job seeds it again)
+    # -sharedDb: one database for every region/credentials (the real service separates them)
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+
+  # One-shot job: create the table + sample notes, then exit (same script used once for the real table)
+  dynamodb-init:
+    image: amazon/aws-cli:2.42.3
+    entrypoint: ["sh", "/init.sh"]
+    environment:
+      AWS_ENDPOINT_URL: http://dynamodb:8000 # AWS CLI v2: send every call to DynamoDB Local
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local     # DynamoDB Local accepts anything, but the CLI requires a value
+      AWS_SECRET_ACCESS_KEY: local
+      TABLE_NAME: notes
+    volumes:
+      - ./db/init.sh:/init.sh:ro
+    depends_on:
+      - dynamodb
+    restart: "no"
