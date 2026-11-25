@@ -114,6 +114,7 @@ WORKDIR /app                   # tạo + cd vào /app; mọi lệnh sau chạy �
 COPY package*.json ./          # CHỈ copy file khai báo thư viện trước...
 RUN npm install --omit=dev     # ...rồi cài (bỏ thư viện dev)
 COPY . .                       # sau đó mới copy toàn bộ mã nguồn (build context = backend/)
+USER node                      # từ đây chạy bằng user "node" (uid 1000, có sẵn trong image), không phải root
 EXPOSE 3000                    # GHI CHÚ "app nghe cổng 3000" – không mở cổng nào cả
 CMD ["node", "server.js"]      # lệnh chạy khi container KHỞI ĐỘNG
 ```
@@ -122,6 +123,7 @@ CMD ["node", "server.js"]      # lệnh chạy khi container KHỞI ĐỘNG
 - `.dockerignore` loại `node_modules` để `COPY . .` không ghi đè thư viện vừa cài bằng thư mục trên máy (có thể sai hệ điều hành/phiên bản).
 - `RUN` chạy **lúc build** (kết quả nằm trong image); `CMD` chạy **lúc container start**.
 - `CMD` dạng mảng JSON (exec form) chạy `node` làm tiến trình số 1 → `docker stop` gửi tín hiệu tắt thẳng tới Node. Dạng chuỗi `CMD node server.js` chạy qua `sh -c`, tín hiệu có thể không tới Node.
+- **`USER node`:** mặc định container chạy bằng `root`. Nếu app bị khai thác lỗi, kẻ tấn công có quyền root trong container (dễ thoát ra host hơn, ghi được mọi file). Image `node` có sẵn user `node` → chỉ cần 1 dòng. Đặt **sau** `npm install`/`COPY` để các file vẫn thuộc root → app chỉ **đọc** được mã của chính nó, không sửa được. Kiểm tra: `docker compose exec backend whoami` → `node`.
 - `EXPOSE` không mở cổng; muốn truy cập từ ngoài phải dùng `ports:` (compose) hoặc `-p` (`docker run`).
 
 ### `frontend/Dockerfile` (multi-stage)
@@ -190,7 +192,7 @@ volumes:
   mongo-data:                      # khai báo named volume (Docker quản lý, /var/lib/docker/volumes)
 ```
 
-- **`build` vs `image`:** `build` = tự build từ Dockerfile; `image` = pull image có sẵn. Khi deploy lên EC2, frontend/backend sẽ đổi sang `image: <ECR URL>` (EC2 chỉ pull, không build).
+- **`build` vs `image`:** `build` = tự build từ Dockerfile; `image` = pull image có sẵn. Compose production ([`../../deploy/docker-compose.yml`](../../deploy/docker-compose.yml)) dùng `image: <ECR URL>` – EC2 chỉ pull, không build.
 - **Network:** không cần khai báo – Compose tự tạo `<tên-thư-mục>_default` (ở đây `nodejs_default`) và gắn cả 3 container vào (`docker network ls`).
 - **Vì sao cần `condition: service_healthy`:** `depends_on` dạng ngắn chỉ đảm bảo container **đã chạy**, không phải **đã sẵn sàng**. Mongo cần vài giây khởi động; backend kết nối sớm sẽ lỗi và `process.exit(1)`.
 - **Named volume vs bind mount:** `mongo-data:` do Docker quản lý, dùng cho dữ liệu cần giữ (xóa container vẫn còn, chỉ `down -v` mới mất). `./db/seed.js:` gắn trực tiếp file trên máy vào container, dùng cho cấu hình/script.
@@ -199,5 +201,5 @@ volumes:
 ## 5. Còn thiếu so với production (làm dần)
 
 1. Chưa có `package-lock.json` → mỗi lần build có thể cài phiên bản thư viện khác (`^4.21.0` cho phép 4.x mới hơn). Chuẩn: commit file lock + dùng `npm ci`.
-2. Backend chạy bằng user `root` trong container → nên thêm `USER node`.
-3. Chưa có `restart: unless-stopped` → EC2 reboot hoặc container crash thì không tự chạy lại (thêm khi deploy thật).
+2. ~~Backend chạy bằng `root`~~ → **đã sửa**: `USER node` (mục 3).
+3. ~~Chưa có `restart: unless-stopped`~~ → **đã có** trong compose production ([`../../deploy/docker-compose.yml`](../../deploy/docker-compose.yml)); compose local không cần.

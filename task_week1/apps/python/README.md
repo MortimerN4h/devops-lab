@@ -135,7 +135,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 - **Mẹo cache giống Node:** `requirements.txt` + `pip install` đứng trước `COPY main.py`. Sửa code → layer cài thư viện được dùng lại → build vài giây.
 - **Vì sao `-slim` chứ không `-alpine` như Node?** Thư viện Python có phần viết bằng C (như `psycopg[binary]`, `uvloop`) được phát hành sẵn dạng *wheel* cho Linux thường (glibc). Alpine dùng musl → nhiều thư viện phải tự biên dịch → cần cài thêm trình biên dịch, build lâu. Với Python, `-slim` là lựa chọn phổ biến.
 - **`PYTHONUNBUFFERED=1`:** không có dòng này, `print`/log có thể bị giữ trong bộ đệm → `docker logs` không thấy gì dù app đang chạy.
-- **`USER app`:** nếu app bị tấn công, kẻ tấn công chỉ có quyền user thường trong container. (Bản Node chưa làm – xem README Node mục 5.)
+- **`USER app`:** nếu app bị tấn công, kẻ tấn công chỉ có quyền user thường trong container. (Node cũng đã làm: `USER node`.)
 - `CMD` dạng mảng (exec form): uvicorn là tiến trình số 1, nhận đúng tín hiệu tắt từ `docker stop`.
 
 ### `frontend/Dockerfile` (multi-stage, giống hệt cấu trúc React)
@@ -232,5 +232,5 @@ Không dùng Pydantic model cho body (cách quen thuộc của FastAPI) vì khi 
 ## 6. Còn thiếu so với production (làm dần)
 
 1. Chưa có `package-lock.json` (giống Node) → nên commit file lock + dùng `npm ci`.
-2. Mật khẩu Postgres ghi thẳng trong compose → khi deploy sẽ đọc từ `.env` trên server.
-3. Chưa giới hạn RAM (`mem_limit`) – thêm khi gộp nhiều app trên một EC2.
+2. Mật khẩu Postgres ghi thẳng trong compose **local** (chỉ để chạy thử). Production đã đọc từ `.env` trên server (`PYTHON_DB_PASSWORD`).
+3. Chưa giới hạn RAM (`mem_limit`) – hiện 5 app chạy chung một EC2, nên thêm.

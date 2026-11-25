@@ -163,6 +163,11 @@ và **mọi app sập**. (`deploy.sh` sẽ chặn lại ở bước `nginx -t`, 
 
 Tên service **phải** kết thúc bằng `-frontend` / `-backend` thì `deploy.sh` mới tự pull image của nó.
 
+**App dùng dịch vụ AWS thay vì container DB** (như `.NET` + DynamoDB): thêm vào giữa bước 4 và 6:
+Terraform tạo tài nguyên (bảng), cấp quyền IAM cho `devops-app-role` **chỉ trên tài nguyên đó**,
+EC2 cần `metadata_options` hop limit 2 (container lấy key qua IMDS), seed 1 lần từ bastion.
+Compose server **không** có container DB và không có key: chỉ tên bảng + region.
+
 ## 9. Vận hành trên server
 
 ```bash
@@ -180,11 +185,12 @@ sudo certbot renew --dry-run                        # thử gia hạn (certbot t
 
 1. [`../terraform/app`](../terraform/app) `terraform apply`. `user_data` cài Docker + certbot, clone repo,
    ghi `.env` (`REGISTRY`, `DOMAIN`, `NGINX_MODE=http`) rồi `docker compose up -d`.
-2. Thêm tay vào `.env`: `PYTHON_DB_PASSWORD` (user_data **chưa** ghi biến này – TODO).
+2. Thêm tay vào `.env`: `PYTHON_DB_PASSWORD`, `GO_DB_PASSWORD`, `JAVA_DB_PASSWORD`, `JAVA_DB_ROOT_PASSWORD` (user_data **chưa** ghi các biến này – xem mục 11).
 3. Xin cert cho từng tên miền (mục 8 bước 5).
 4. Đổi `NGINX_MODE=https` trong `.env` → `docker compose up -d edge` (dòng `volumes:` đổi nên compose tạo lại edge).
 
 Dữ liệu DB nằm trên ổ của server: dựng lại server = **mất dữ liệu** (chỉ còn dữ liệu seed).
+Ngoại lệ: **.NET** dùng bảng DynamoDB thật trên AWS → dữ liệu còn nguyên, không cần seed lại.
 
 Bẫy đã gặp: `terraform plan` đòi **tạo lại server** dù chỉ thêm bản ghi DNS. Nguyên nhân: AMI lấy từ tham số SSM "current"
 (luôn là bản Ubuntu mới nhất). Đã sửa bằng `lifecycle { ignore_changes = [ami] }`.

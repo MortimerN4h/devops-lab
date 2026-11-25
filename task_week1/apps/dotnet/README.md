@@ -211,14 +211,19 @@ Kết quả là JSON có kiểu của từng giá trị (`"S"`, `"BOOL"`).
 
 ## 6. Production: DynamoDB thật trên AWS
 
-Cần thêm (làm ở bước deploy):
+Đã deploy ở `https://dotnet.<domain>`. So với 4 app kia, production có thêm:
 
-1. **Terraform tạo bảng** `aws_dynamodb_table` (`billing_mode = PAY_PER_REQUEST`, `hash_key = "id"`).
-2. **Quyền IAM** cho role `devops-app-role` của EC2: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Scan` – **chỉ trên ARN của bảng này**.
-3. **IMDS hop limit = 2** trên EC2: container lấy credential của instance role qua IMDS (`169.254.169.254`). Request từ container
-   đi qua thêm một "bước" mạng (bridge của Docker), mặc định hop limit = 1 thì gói tin bị bỏ → SDK báo không tìm thấy credential.
-4. Compose production: backend chỉ có `TABLE_NAME` + `AWS_REGION`, **không** `DYNAMODB_ENDPOINT`, **không** container DynamoDB.
-5. Seed một lần từ bastion: `TABLE_NAME=<tên bảng> AWS_REGION=us-east-1 sh db/init.sh` (không đặt `AWS_ENDPOINT_URL` → CLI gọi AWS thật).
+1. **Terraform tạo bảng** `aws_dynamodb_table.dotnet_notes` = `devops-lab-dotnet-notes` (`PAY_PER_REQUEST`, `hash_key = "id"`) –
+   trong [`../../terraform/app/main.tf`](../../terraform/app/main.tf). Bảng là **dịch vụ của AWS**, không nằm trên server nào.
+2. **Quyền IAM** (inline policy `dotnet-notes-table`) cho role `devops-app-role` của EC2: `GetItem`, `PutItem`, `UpdateItem`,
+   `DeleteItem`, `Scan`, `DescribeTable` – **chỉ trên ARN của bảng này**.
+3. **IMDS hop limit = 2** (`metadata_options`, kèm IMDSv2 bắt buộc): container lấy credential của instance role qua IMDS (`169.254.169.254`).
+   Request từ container đi qua thêm một "bước" mạng (bridge của Docker); hop limit = 1 thì gói trả lời bị bỏ → SDK báo không tìm thấy credential.
+4. Compose production ([`../../deploy/docker-compose.yml`](../../deploy/docker-compose.yml)): backend chỉ có `TABLE_NAME` + `AWS_REGION`,
+   **không** `DYNAMODB_ENDPOINT`, **không** khóa, **không** container DB → dựng lại server **không mất dữ liệu**.
+5. Seed **một lần** từ bastion (máy admin; bastion và server đều chỉ là client gọi API AWS):
+   `TABLE_NAME=$(terraform -chdir=task_week1/terraform/app output -raw dotnet_table) AWS_REGION=us-east-1 sh task_week1/apps/dotnet/db/init.sh`
+   (không đặt `AWS_ENDPOINT_URL` → CLI gọi AWS thật; lấy tên từ Terraform để gõ sai không tạo nhầm bảng mới).
 
 Muốn chạy **local trỏ vào AWS thật** (thử bản thật mà không đụng production): dùng một bảng dev riêng, bỏ `DYNAMODB_ENDPOINT`,
 và truyền credential vào container (hoặc hop limit 2 trên bastion).

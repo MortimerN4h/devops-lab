@@ -224,6 +224,6 @@ Như các app khác: không dùng `@RequestBody NoteInput` + `@Valid` (cách que
 1. **Unit test** (`src/test/java`, JUnit) – Spring Boot hay test bằng `@SpringBootTest` + Testcontainers (MySQL thật trong Docker).
 2. **Migration** (Flyway/Liquibase) thay cho `init.sql`: `init.sql` chỉ chạy lần đầu, còn đổi schema về sau (thêm cột…) cần công cụ ghi lại từng phiên bản.
 3. **Healthcheck Spring Boot Actuator** (`/actuator/health`) cho Docker/monitoring.
-4. **RAM**: MySQL + JVM ~700 MB – server 2 GB không đủ cho mọi app → nâng instance trước khi deploy. Nên đặt `mem_limit` (JVM tự co heap theo nhờ `MaxRAMPercentage`).
+4. **RAM**: MySQL + JVM ~700 MB – server đã nâng lên m7i-flex.large (8 GB) trước khi deploy. Vẫn nên đặt `mem_limit` (JVM tự co heap theo nhờ `MaxRAMPercentage`).
 5. Khởi động chậm (~10 giây): deploy sẽ có vài giây 502 khi container backend mới chưa sẵn sàng. Giải pháp: healthcheck + chờ healthy trước khi chuyển traffic.
 6. Frontend là bản chép của `apps/python/frontend`; chưa có `package-lock.json`.
