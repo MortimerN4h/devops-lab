@@ -1,5 +1,9 @@
 # MODE https: used AFTER certbot created /etc/letsencrypt/live/<app>.<domain>/ for EVERY app below (NGINX_MODE=https).
 
+# Docker's internal DNS (127.0.0.11) is asked again every 10 s, so a container that was RECREATED
+# (new IP) is found. Without this, nginx resolves names only once at start and keeps the old IP -> 502.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
 # Port 80: keep serving the challenge (needed for renewals), send everything else to HTTPS.
 server {
     listen 80 default_server;
@@ -24,7 +28,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
 
     location / {
-        proxy_pass http://node-frontend;
+        set $upstream http://node-frontend;
+        proxy_pass $upstream; # a variable = resolve at request time (with the resolver above)
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -44,7 +49,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
 
     location / {
-        proxy_pass http://python-frontend;
+        set $upstream http://python-frontend;
+        proxy_pass $upstream; # a variable = resolve at request time (with the resolver above)
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -63,7 +69,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
 
     location / {
-        proxy_pass http://go-frontend;
+        set $upstream http://go-frontend;
+        proxy_pass $upstream; # a variable = resolve at request time (with the resolver above)
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
