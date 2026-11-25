@@ -12,7 +12,9 @@ APP_SERVICES=$(docker compose config --services | grep -E -- '-(frontend|backend
 docker compose pull $APP_SERVICES # no quotes: one argument per service name
 
 # 2) Create missing containers, recreate the ones whose image or settings changed, leave the rest.
-docker compose up -d
+#    --remove-orphans: also delete containers of services that were REMOVED from docker-compose.yml
+#    (the file in git is the truth: what is not in it should not run).
+docker compose up -d --remove-orphans
 
 # 3) Edge. compose only compares the LINES of docker-compose.yml, not the content of mounted files,
 #    and edge turns its *.template files into the real config only when it starts.

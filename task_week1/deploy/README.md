@@ -6,7 +6,7 @@ Server clone repo về `/opt/devops-lab`, rồi chạy compose trong `/opt/devop
 > Mục tiêu file này: hiểu **một thay đổi đi từ `git push` tới trình duyệt như thế nào**, mỗi file ở đây làm gì,
 > và **thêm một app mới** cần làm những bước nào (checklist ở mục 8).
 
-Hiện đang chạy: `https://node.<domain>` (React + Express + MongoDB), `https://python.<domain>` (Angular + FastAPI + PostgreSQL) và `https://go.<domain>` (React + Gin + Redis; sơ đồ dưới chỉ vẽ hai app đầu).
+Hiện đang chạy: `https://node.<domain>` (React + Express + MongoDB), `https://python.<domain>` (Angular + FastAPI + PostgreSQL) và `https://go.<domain>` (React + Gin + PostgreSQL, Redis cache; sơ đồ dưới chỉ vẽ hai app đầu).
 
 ## 1. Toàn cảnh
 
@@ -99,7 +99,8 @@ edge:
 
 ```
 1. docker compose pull <mọi service *-frontend, *-backend>   image mới nhất từ ECR (DB và edge dùng tag cố định, không pull)
-2. docker compose up -d                                        tạo container còn thiếu, tạo lại container có image/cấu hình đổi
+2. docker compose up -d --remove-orphans                       tạo container còn thiếu, tạo lại container có image/cấu hình đổi,
+                                                               xóa container của service đã bị bỏ khỏi compose
 3. nếu nội dung nginx/ khác lần trước (so mã băm .nginx-hash):
      docker compose run --rm --no-deps edge nginx -t           kiểm tra cấu hình mới trong một container edge TẠM
      docker compose restart edge                                đạt thì mới restart edge thật

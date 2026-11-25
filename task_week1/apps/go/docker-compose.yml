@@ -9,33 +9,35 @@ services:
   backend:
     build: ./backend
     environment:
-      REDIS_ADDR: redis:6379
+      DATABASE_URL: postgres://notes:notes@postgres:5432/notesdb # the data (the truth)
+      REDIS_ADDR: redis:6379                                     # the cache (a copy, may be lost)
     depends_on:
-      redis-seed:
-        condition: service_completed_successfully # wait until the seed container EXITED with code 0
+      postgres:
+        condition: service_healthy # cannot work without the database
+      redis:
+        condition: service_started # only a cache: "running" is enough
 
-  redis:
-    image: redis:7-alpine
-    # --appendonly yes: also write every change to a file in /data, so notes survive a restart
-    # (by default Redis keeps data in RAM and only takes snapshots from time to time)
-    command: ["redis-server", "--appendonly", "yes"]
+  postgres:
+    image: postgres:16-alpine
+    environment: # the image creates this user + database at first start
+      POSTGRES_USER: notes
+      POSTGRES_PASSWORD: notes # local dev only; production reads it from .env
+      POSTGRES_DB: notesdb
     volumes:
-      - redis-data:/data
+      - pg-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"] # answers PONG when ready
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U notes -d notesdb"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  redis-seed:
-    image: redis:7-alpine # same image, used only for its redis-cli tool
-    entrypoint: ["sh", "/seed.sh"]
-    volumes:
-      - ./db/seed.sh:/seed.sh:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: "no" # a one-shot job: run, exit, stay stopped
+  redis:
+    image: redis:7-alpine
+    # A pure cache: no disk at all (--save "" = no snapshots, appendonly no), at most 64 MB of RAM,
+    # and when full, evict the least recently used keys (allkeys-lru) instead of refusing writes.
+    command: ["redis-server", "--save", "", "--appendonly", "no",
+              "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
 
 volumes:
-  redis-data:
+  pg-data:
