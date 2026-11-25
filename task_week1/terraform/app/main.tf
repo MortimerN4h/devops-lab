@@ -106,6 +106,45 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# ---- DynamoDB: the REAL table used by the .NET app in production (locally it uses DynamoDB Local) ----
+# Only the key is declared: DynamoDB is schemaless, other attributes (text, done, ...) are free per item.
+resource "aws_dynamodb_table" "dotnet_notes" {
+  name         = "devops-lab-dotnet-notes"
+  billing_mode = "PAY_PER_REQUEST" # pay per read/write, no capacity to plan; ~0 USD at lab traffic
+  hash_key     = "id"              # partition key: every item is found by its id
+
+  attribute {
+    name = "id"
+    type = "S" # S = string (the UUID v7 text)
+  }
+
+  tags = {
+    Name = "devops-lab-dotnet-notes"
+  }
+}
+
+# Least privilege: the server may touch ONLY this table, and only with the calls Program.cs makes.
+# (An "inline" policy lives inside the role; it is deleted together with it.)
+resource "aws_iam_role_policy" "dotnet_dynamodb" {
+  name = "dotnet-notes-table"
+  role = aws_iam_role.app.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:DescribeTable",
+      ]
+      Resource = aws_dynamodb_table.dotnet_notes.arn
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "app" {
   name = "devops-app-profile"
   role = aws_iam_role.app.name
@@ -129,6 +168,16 @@ resource "aws_instance" "app" {
 
   root_block_device {
     volume_size = 20
+  }
+
+  # IMDS = the metadata service at 169.254.169.254 that hands out the role's temporary keys.
+  # tokens "required" = IMDSv2 only (a session token is needed: blocks SSRF-style key theft).
+  # hop limit 2: a request from a Docker container crosses one extra network hop (the bridge);
+  # with limit 1 the token reply would die on the way and the .NET container could not reach DynamoDB.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
   }
 
   tags = {
