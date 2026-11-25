@@ -9,9 +9,11 @@ variable "region" {
 }
 
 variable "instance_type" {
-  description = "t3.small = 2 vCPU, 2GB RAM (enough for edge nginx + a few apps, with swap)"
+  # Was t3.small (2 GB): fine for Node + Python + Go, too small once Java (JVM + MySQL ~700 MB) joins.
+  # Changing it = Terraform stops the server, changes the type, starts it again (same disk, same Elastic IP).
+  description = "m7i-flex.large = 2 vCPU, 8 GB RAM (free-plan eligible; t3.medium is not)"
   type        = string
-  default     = "t3.small"
+  default     = "m7i-flex.large"
 }
 
 variable "ssh_public_key_path" {
