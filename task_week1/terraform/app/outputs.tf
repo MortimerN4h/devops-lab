@@ -28,3 +28,7 @@ output "dotnet_table" {
   description = "Real DynamoDB table of the .NET app (TABLE_NAME in the server compose)"
   value       = aws_dynamodb_table.dotnet_notes.name
 }
+
+output "dotnet_url" {
+  value = "http://${aws_route53_record.dotnet.name}"
+}
