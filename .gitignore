@@ -14,8 +14,15 @@ DAILY_REPORT.md
 # Dependencies / build output
 node_modules/
 __pycache__/
-target/.nginx-hash
+target/
+
+# Written by deploy.sh on the server
+.nginx-hash
 
 # .NET build output
 bin/
 obj/
+
+# kubeconfig copied from the RKE2 master (admin access to the cluster)
+kubeconfig*
+*.kubeconfig

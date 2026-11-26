@@ -98,6 +98,18 @@ Mục đích học: network, DNS, cert, Dockerfile, compose, DB admin.
 - CI OIDC `Not authorized to perform sts:AssumeRoleWithWebIdentity` (19/11): GitHub gửi `sub` dạng mới có ID số → trust policy chấp nhận cả 2 dạng (`github_repo_with_ids`). Debug: CloudTrail event `AssumeRoleWithWebIdentity` → `userName`.
 - Tài khoản GitHub từng bị khoá billing (repo private) → chuyển sang repo public `devops-lab`.
 
+## 7b. Task tuần 2: RKE2 + Longhorn (bắt đầu 2026-11-25)
+**Yêu cầu:** cài RKE2 trên EC2, **1 master + 1 worker**, rồi cài **Longhorn** (storage cho Kubernetes). Thư mục `task_week2/`.
+**Cách làm (chốt):** Terraform chỉ tạo máy + security group (`task_week2/terraform/rke2/`); RKE2 và Longhorn **cài tay** từng bước
+(user chạy lệnh, agent giải thích) để thấy rõ từng thành phần. Ghi lại trong `task_week2/README.md`.
+- Phiên bản (kiểm tra 25/11): RKE2 stable **v1.36.6+rke2r1**; Longhorn **v1.13.0** (cần Kubernetes ≥ 1.34).
+- Máy: `devops-rke2-master` + `devops-rke2-worker`, c7i-flex.large (2 vCPU, 4 GB), Ubuntu 24.04, đĩa 30/40 GB gp3,
+  hostname `rke2-master`/`rke2-worker` (user_data). SG `devops-rke2-sg`: mọi cổng giữa 2 node (`self`), 22 + 6443 chỉ từ SG bastion.
+  Key SSH `~/.ssh/devops-rke2` trên bastion. Quota vCPU tài khoản = 16 (đang dùng 4 + 4 mới).
+- Các bước: (1) Terraform 2 node · (2) RKE2 server trên master · (3) RKE2 agent trên worker (token) · (4) kubectl từ bastion
+  · (5) chuẩn bị node cho Longhorn (open-iscsi, nfs-common, preflight) · (6) Helm cài Longhorn · (7) thử PVC + pod, xem UI.
+- Trạng thái: bước 1 đã viết Terraform, chờ user apply.
+
 ## 8. Nhật ký / Kiến thức đã học
 - 2026-11-17: swap (fallocate/chmod 600/mkswap/swapon, fstab). Build ở nơi khác rồi push ECR, EC2 chỉ pull+chạy. Terraform = tạo hạ tầng, Ansible = cấu hình trong máy.
 - 2026-11-17: Lỗi "permission denied ... docker.sock" = phiên chưa nhận nhóm docker sau usermod (không phải security group) → newgrp/SSH lại.
