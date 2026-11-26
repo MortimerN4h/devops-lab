@@ -1,0 +1,14 @@
+# Our changes to the Longhorn Helm chart (v1.13.0). Everything not written here keeps the chart default.
+# See every option: helm show values longhorn/longhorn --version 1.13.0
+# Used by: helm upgrade --install longhorn longhorn/longhorn -n longhorn-system --version 1.13.0 -f values.yaml
+
+persistence:
+  # The chart creates a StorageClass named "longhorn" and makes it the cluster DEFAULT
+  # (a PVC without storageClassName gets a Longhorn volume).
+  # Replicas = copies of each volume, each on a DIFFERENT node. Default is 3, but we only have 2 nodes:
+  # with 3 the volume would stay "Degraded" forever (the 3rd copy has nowhere to go).
+  defaultClassReplicaCount: 2
+
+defaultSettings:
+  # Same thing for volumes created by hand in the Longhorn UI (one value per data engine: v1 = iSCSI, v2 = SPDK)
+  defaultReplicaCount: '{"v1":"2","v2":"2"}'

@@ -98,3 +98,65 @@ kubectl get nodes -o wide
 ```
 
 kubeconfig = quyền **admin** cluster: chỉ để ở `~/.kube/config` (ngoài repo), quyền 600, không commit.
+
+## 5. Chuẩn bị node cho Longhorn
+
+Longhorn gắn mỗi volume vào node dưới dạng **ổ đĩa iSCSI** → node cần `open-iscsi` + `iscsid` chạy;
+`nfs-common` cho volume dùng chung (ReadWriteMany). Script [`longhorn/node-prep.sh`](longhorn/node-prep.sh)
+cài gói, bật `iscsid`, nạp module kernel (`iscsi_tcp`, `dm_crypt`), và cấm `multipathd` chiếm ổ `/dev/sd*` của Longhorn.
+
+```bash
+cd task_week2/terraform/rke2
+for ip in $(terraform output -raw master_private_ip) $(terraform output -raw worker_private_ip); do
+  ssh -i ~/.ssh/devops-rke2 ubuntu@$ip 'sudo bash -s' < ../../longhorn/node-prep.sh
+done
+```
+
+Kiểm tra bằng công cụ của Longhorn (`longhornctl`, chạy từ bastion qua kubeconfig: tạo DaemonSet tạm trên mọi node, xem rồi dọn):
+```bash
+cd /tmp
+curl -LO https://github.com/longhorn/cli/releases/download/v1.13.0/longhornctl-linux-amd64
+curl -LO https://github.com/longhorn/cli/releases/download/v1.13.0/longhornctl-linux-amd64.sha256
+sha256sum --check longhornctl-linux-amd64.sha256                      # longhornctl-linux-amd64: OK
+sudo install -m 755 longhornctl-linux-amd64 /usr/local/bin/longhornctl && rm longhornctl-linux-amd64*
+kubectl create namespace longhorn-system                              # longhornctl chạy pod kiểm tra trong namespace này, KHÔNG tự tạo
+longhornctl check preflight --kubeconfig ~/.kube/config              # mỗi node: info, không có error
+# longhornctl KHÔNG tự đọc ~/.kube/config như kubectl/helm: phải đưa --kubeconfig hoặc biến KUBECONFIG
+#   echo 'export KUBECONFIG=$HOME/.kube/config' >> ~/.bashrc && source ~/.bashrc
+```
+
+## 6. Cài Longhorn bằng Helm
+
+**Helm** = trình quản lý gói của Kubernetes: một **chart** (gói) chứa hàng chục file YAML có biến;
+`helm install` điền biến (từ `values.yaml`) rồi gửi tất cả lên cluster, và nhớ lại thành một **release** để nâng cấp / gỡ.
+
+```bash
+cd /tmp
+curl -LO https://get.helm.sh/helm-v4.3.2-linux-amd64.tar.gz
+curl -LO https://get.helm.sh/helm-v4.3.2-linux-amd64.tar.gz.sha256sum
+sha256sum --check helm-v4.3.2-linux-amd64.tar.gz.sha256sum
+tar -xzf helm-v4.3.2-linux-amd64.tar.gz && sudo install -m 755 linux-amd64/helm /usr/local/bin/helm
+rm -rf linux-amd64 helm-v4.3.2-linux-amd64.tar.gz*
+helm version
+
+helm repo add longhorn https://charts.longhorn.io && helm repo update
+cd ~/devops-tma/task_week2/longhorn
+helm upgrade --install longhorn longhorn/longhorn --namespace longhorn-system --create-namespace \
+  --version 1.13.0 -f values.yaml
+kubectl -n longhorn-system get pods -o wide -w        # chờ mọi pod Running (3-5 phút)
+```
+
+[`longhorn/values.yaml`](longhorn/values.yaml): chỉ đổi **số bản sao = 2** (mặc định 3, cluster chỉ có 2 node).
+
+Kiểm tra:
+```bash
+kubectl get storageclass                               # longhorn (default)  driver.longhorn.io
+kubectl -n longhorn-system get nodes.longhorn.io       # 2 node, READY + SCHEDULABLE = True
+helm list -n longhorn-system                           # release longhorn, chart longhorn-1.13.0, deployed
+```
+
+Giao diện web (không mở ra Internet: chuyển cổng qua bastion):
+```bash
+kubectl -n longhorn-system port-forward svc/longhorn-frontend 18090:80
+# IDE: tab Ports → forward 18090 → mở http://localhost:18090 (tránh 8080 hay trùng trên laptop)
+```
