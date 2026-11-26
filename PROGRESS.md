@@ -108,7 +108,7 @@ Mục đích học: network, DNS, cert, Dockerfile, compose, DB admin.
   Key SSH `~/.ssh/devops-rke2` trên bastion. Quota vCPU tài khoản = 16 (đang dùng 4 + 4 mới).
 - Các bước: (1) Terraform 2 node · (2) RKE2 server trên master · (3) RKE2 agent trên worker (token) · (4) kubectl từ bastion
   · (5) chuẩn bị node cho Longhorn (open-iscsi, nfs-common, preflight) · (6) Helm cài Longhorn · (7) thử PVC + pod, xem UI.
-- Trạng thái: bước 1 đã viết Terraform, chờ user apply.
+- Trạng thái: bước 1 XONG (2 node chạy, đã push). Bước 2 XONG (master Ready). Bước 3 XONG (2 node Ready). Bước 4 (kubectl từ bastion, kubectl v1.36.6 cài vào /usr/local/bin, kubeconfig ~/.kube/config đổi 127.0.0.1 → IP master) đã hướng dẫn, ghi trong `task_week2/README.md`.
 
 ## 8. Nhật ký / Kiến thức đã học
 - 2026-11-17: swap (fallocate/chmod 600/mkswap/swapon, fstab). Build ở nơi khác rồi push ECR, EC2 chỉ pull+chạy. Terraform = tạo hạ tầng, Ansible = cấu hình trong máy.
